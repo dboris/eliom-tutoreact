@@ -147,25 +147,9 @@ let%client preregister_handler =
   in
   fun () -> preregister_rpc
 
-let%shared main_service_handler myid_o () () =
-  Tutoreact_container.page
-    ~a:[ a_class ["os-page-main"] ]
-    myid_o (
-    [ p [%i18n welcome_text1]
-    ; p [%i18n welcome_text2]
-    ; ul [ li [%i18n welcome_text3]
-         ; li [%i18n welcome_text4]
-         ]
-    ; p [%i18n welcome_text5]
-    ; ul [ li [%i18n welcome_text6]
-         ; li [%i18n welcome_text7]
-         ; li [%i18n welcome_text8]
-         ; li [%i18n welcome_text9]
-         ; li [%i18n welcome_text10]
-         ]
-    ; p [%i18n welcome_text11]
-    ]
-  )
+let%shared main_service_handler userid_o () () =
+  let%lwt content = Tutoreact_messages.display userid_o in
+  Tutoreact_container.page userid_o content
 
 let%shared about_handler myid_o () () = Eliom_content.Html.F.(
   Tutoreact_container.page
