@@ -1,4 +1,6 @@
 [%%shared
+open Eliom_lib
+open Eliom_content.Html
 open Eliom_content.Html.D
 ]
 
@@ -36,10 +38,15 @@ module Db = struct
 end
 ]
 
-(* Dummy *)
-let%client display _ = Lwt.return [p []]
+let%server add_message_rpc =
+  Eliom_client.server_function
+    [%json: string]
+    (Os_session.connected_rpc (fun userid value -> Db.add_message value))
 
-let%server display _userid_o =
+(* Dummy *)
+let%client display _ = Lwt.return [p [txt "Testing"]]
+
+let%server display_messages () =
   let%lwt messages = Db.get_messages () in
   let%lwt l =
     Lwt_list.map_s
@@ -48,4 +55,26 @@ let%server display _userid_o =
          Lwt.return (li [txt msg]))
       messages
   in
-  Lwt.return [ul l]
+  Lwt.return (ul l)
+
+let%server display userid_o =
+  let%lwt messages = display_messages () in
+  let l = match userid_o with
+    | None ->
+      []
+    | _ ->
+      let inp = Raw.input ~a:[a_input_type `Text] () in
+      let _ = [%client
+        (let open Js_of_ocaml_lwt.Lwt_js_events in
+        let open Js_of_ocaml in
+        let inp = To_dom.of_input ~%inp in
+        async (fun () -> changes inp (fun _ _ ->
+          let value = Js.to_string inp##.value in
+          inp##.value := Js.string "";
+          let%lwt _ = ~%add_message_rpc value in
+          Lwt.return ()))
+        : unit)
+      ] in
+      [inp]
+  in
+  Lwt.return (messages :: l)
