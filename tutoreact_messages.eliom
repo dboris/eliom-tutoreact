@@ -4,9 +4,7 @@ open Eliom_content.Html
 open Eliom_content.Html.D
 ]
 
-[%%server
 module Db = struct
-
   let db = Ocsipersist.open_table "messages"
 
   let last_key =
@@ -34,28 +32,62 @@ module Db = struct
     let%lwt db = db in
     let%lwt () = Ocsipersist.add db (string_of_int index) v in
     Lwt.return index
-
 end
-]
+
+module Forum_notif = Os_notif.Make_Simple (
+  struct
+    type key = unit
+    type notification = int
+  end
+)
 
 let%server add_message_rpc =
   Eliom_client.server_function
     [%json: string]
-    (Os_session.connected_rpc (fun userid value -> Db.add_message value))
+    (Os_session.connected_rpc
+       (fun userid value ->
+          let%lwt id = Db.add_message value in
+          Forum_notif.notify () id;
+          Lwt.return ()))
+
+let%server get_data = Db.get_message
+
+let%server get_data_rpc =
+  Eliom_client.server_function
+    [%json: int]
+    (Os_session.Opt.connected_rpc (fun userid_o id -> get_data id))
+
+let%client get_data id = ~%get_data_rpc id
+
+let%client handle_notif_message_list rmessages (_, msgid) =
+  Eliom_shared.ReactiveData.RList.cons msgid (snd rmessages)
+
+let%server cache : (int, string) Eliom_cscache.t =
+  Eliom_cscache.create ()
+
+let%shared display_message id =
+  let%lwt msg = Eliom_cscache.find ~%cache get_data id in
+  Lwt.return (li [txt msg])
+
+let%server display_messages () =
+  Forum_notif.listen ();
+  let%lwt messages = Db.get_messages () in
+  let rmessages = Eliom_shared.ReactiveData.RList.create messages in
+  ignore [%client
+    (ignore
+       (React.E.map (handle_notif_message_list ~%rmessages)
+          ~%(Forum_notif.client_ev ()))
+     : unit)
+  ];
+  let%lwt content =
+    Eliom_shared.ReactiveData.RList.Lwt.map_p
+      [%shared display_message ]
+      (fst rmessages)
+  in
+  Lwt.return (R.ul content)
 
 (* Dummy *)
 let%client display _ = Lwt.return [p [txt "Testing"]]
-
-let%server display_messages () =
-  let%lwt messages = Db.get_messages () in
-  let%lwt l =
-    Lwt_list.map_s
-      (fun id ->
-         let%lwt msg = Db.get_message id in
-         Lwt.return (li [txt msg]))
-      messages
-  in
-  Lwt.return (ul l)
 
 let%server display userid_o =
   let%lwt messages = display_messages () in
@@ -64,8 +96,8 @@ let%server display userid_o =
       []
     | _ ->
       let inp = Raw.input ~a:[a_input_type `Text] () in
-      let _ = [%client
-        (let open Js_of_ocaml_lwt.Lwt_js_events in
+      let _ = [%client (
+        let open Js_of_ocaml_lwt.Lwt_js_events in
         let open Js_of_ocaml in
         let inp = To_dom.of_input ~%inp in
         async (fun () -> changes inp (fun _ _ ->
