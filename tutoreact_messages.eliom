@@ -1,5 +1,4 @@
 [%%shared
-open Eliom_lib
 open Eliom_content.Html
 open Eliom_content.Html.D
 ]
@@ -45,7 +44,7 @@ let%server add_message_rpc =
   Eliom_client.server_function
     [%json: string]
     (Os_session.connected_rpc
-       (fun userid value ->
+       (fun _userid value ->
           let%lwt id = Db.add_message value in
           Forum_notif.notify () id;
           Lwt.return ()))
@@ -55,7 +54,7 @@ let%server get_data = Db.get_message
 let%server get_data_rpc =
   Eliom_client.server_function
     [%json: int]
-    (Os_session.Opt.connected_rpc (fun userid_o id -> get_data id))
+    (Os_session.Opt.connected_rpc (fun _userid_o id -> get_data id))
 
 let%client get_data id = ~%get_data_rpc id
 
